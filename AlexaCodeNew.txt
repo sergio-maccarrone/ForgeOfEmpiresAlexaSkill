@@ -1,0 +1,257 @@
+# -*- coding: utf-8 -*-
+
+# This sample demonstrates handling intents from an Alexa skill using the Alexa Skills Kit SDK for Python.
+# Please visit https://alexa.design/cookbook for additional examples on implementing slots, dialog management,
+# session persistence, api calls, and more.
+# This sample is built using the handler classes approach in skill builder.
+import logging
+import ask_sdk_core.utils as ask_utils
+
+from ask_sdk_core.skill_builder import SkillBuilder
+from ask_sdk_core.dispatch_components import AbstractRequestHandler
+from ask_sdk_core.dispatch_components import AbstractExceptionHandler
+from ask_sdk_core.handler_input import HandlerInput
+import os
+import boto3
+import json
+from ask_sdk_model import Response
+
+logger = logging.getLogger(__name__)
+logger.setLevel(logging.INFO)
+
+listGeEn=["observatory" , "temple of relics" , "oracle of delphi" , "tower of babel" , "statue of zeus" , "colosseum" , "lighthouse of alexandria" , "hagia sophia" , "cathedral of aachen" , "galata tower" , "st. mark's basilica" , "notre dame" , "saint basil's cathedral" , "castel del monte" , "frauenkirche of dresden" , "deal castle" , "royal albert hall" , "capitol" , "chã¢teau frontenac" , "alcatraz" , "space needle" , "atomium" , "cape canaveral" , "the habitat" , "lotus temple" , "innovation tower" , "trust tower" , "voyager v1" , "the arc" , "rain forest project" , "gaea statue" , "seed vault" , "arctic orangery" , "atlantis museum" , "the kraken" , "the blue galaxy" , "terracotta army" , "himeji castle" , "star gazer" , "the virgo project" , "space carrier" , "flying island" ]
+listGeIt=["osservatorio" , "tempio delle reliquie" , "oracolo di delphi" , "torre di babele" , "statua di zeus" , "colosseo" , "faro di alessandria" , "basilica di santa sofia" , "cattedrale di aquisgrana" , "torre di galata" , "basilica di san marco" , "notre dame" , "cattedrale di san basilio" , "castel del monte" , "frauenkirche di dresda" , "deal castle" , "royal albert hall" , "campidoglio" , "chã¢teau frontenac" , "alcatraz" , "space needle" , "atomium" , "cape canaveral" , "habitat 67" , "tempio del loto" , "innovation tower" , "torre della tregua" , "voyager v1" , "progetto arc" , "progetto foresta pluviale" , "statua di gea" , "deposito di sementi" , "serra artica" , "museo di atlantide" , "il kraken" , "la galassia blu" , "esercito di terracotta" , "castello di himeji" , "osservatorio delle stelle" , "il progetto della vergine" , "trasportatore spaziale" , "isola volante"]
+
+
+class LaunchRequestHandler(AbstractRequestHandler):
+    """Handler for Skill Launch."""
+    def can_handle(self, handler_input):
+        return ask_utils.is_request_type("LaunchRequest")(handler_input)
+
+    def handle(self, handler_input):
+        
+        #Out
+        speak_output = "Ciao, come posso aiutarti? Se non conosci le mie potenzialità, puoi dirmi Aiuto"
+        
+        #To set session value of output
+        session_attr = handler_input.attributes_manager.session_attributes
+        session_attr["speak_output"]=speak_output
+        
+        #If the timer is expired 
+        #reprompt="Saro Puoi chiedermi Punti da versare per la posizione 1 su Progetto Arc livello 1, oppure Punti per coprire la posizione 1 su Progetto Arc livello 1"
+        
+        return (handler_input.response_builder.speak(speak_output).ask("Saro Puoi chiedermi Punti da versare per la posizione 1 su Progetto Arc livello 1, oppure Punti per coprire la posizione 1 su Progetto Arc livello 1").response)
+
+
+class FunctionDefault():
+    def GetInput(self,handlerInput):
+        varList=handlerInput
+        Input_pos=varList["pos"].value
+        Input_ge=varList["ge"].value
+        Input_lvl=varList["lvl"].value
+        return Input_pos,Input_ge,Input_lvl
+        
+    def FormatInputGe(self,ge):
+        nameList=ge.split(" ")
+        tmpName=""
+        for word in nameList:
+            tmpName+=word+"_"
+        nameFile=tmpName[:-1]
+        return nameFile
+        
+    def SetBucket(self):
+        s3 = boto3.resource('s3')
+        bucket_name = os.environ.get('S3_PERSISTENCE_BUCKET')
+        bucket = s3.Bucket(bucket_name)
+        return bucket
+        
+    def GetItGeFromEn(self,ge):
+        indexEn=listGeEn.index(ge)
+        traduzioneIt=listGeIt[indexEn]
+        return traduzioneIt
+        
+    def ReturnJsonFile(self,ge):
+        bucket=self.SetBucket()
+        nameFile=self.FormatInputGe(ge)
+        
+        try:
+            obj=bucket.Object('Media/ge_json/'+nameFile+'.json')
+            jsonFile = json.loads(obj.get()['Body'].read().decode('utf-8'))
+            return jsonFile
+            
+        except:
+            #traduzione nome GE
+            ge_traslated=self.GetItGeFromEn(ge)
+            #Format name of Ge in name file
+            nameFile=self.FormatInputGe(ge_traslated)
+            obj=bucket.Object('Media/ge_json/'+nameFile+'.json')
+            jsonFile = json.loads(obj.get()['Body'].read().decode('utf-8'))
+            return jsonFile
+        
+class PfRichiestiHandler(AbstractRequestHandler):
+    def can_handle(self, handler_input):
+        return ask_utils.is_intent_name("PfRichiestiIntent")(handler_input)
+        
+    def handle(self, handler_input):
+        
+        funcObj=FunctionDefault()
+        
+        #Get input value
+        Input_pos,Input_ge,Input_lvl=funcObj.GetInput(handler_input.request_envelope.request.intent.slots)
+        
+        #Get info form corrispective json file
+        jsonFile=funcObj.ReturnJsonFile(Input_ge)
+        
+        #Output
+        Out_PF=jsonFile[int(Input_lvl)]["RewardWithArc90"][int(Input_pos)-1]
+        
+        speak_output="I punti forge richiesti per la posizione {} di {} livello {} sono: {}".format(Input_pos,Input_ge,Input_lvl,Out_PF)
+        
+        #Set session attr
+        session_attr = handler_input.attributes_manager.session_attributes
+        session_attr["speak_output"]=speak_output
+        
+        reprompt="Vuoi chiedermi qualcos'altro?"
+        
+        return (handler_input.response_builder.speak(speak_output).ask(reprompt).response)
+
+
+class PfCoverHandler(AbstractRequestHandler):
+    def can_handle(self, handler_input):
+        # type: (HandlerInput) -> bool
+        return ask_utils.is_intent_name("PfToCoverIntent")(handler_input)
+        
+    def handle(self, handler_input):
+        
+        funcObj=FunctionDefault()
+        
+        #Get input value
+        Input_pos,Input_ge,Input_lvl=funcObj.GetInput(handler_input.request_envelope.request.intent.slots)
+        
+        #Get info form corrispective json file
+        jsonFile=funcObj.ReturnJsonFile(Input_ge)
+        
+        #Output
+        Out_PF=jsonFile[int(Input_lvl)]["CoverWithArc90"][int(Input_pos)-1]
+            
+        speak_output="I punti forge richiesti per coprire la posizione {} di {} livello {} sono: {}".format(Input_pos,Input_ge,Input_lvl,Out_PF)
+        
+        #Set session attr
+        session_attr = handler_input.attributes_manager.session_attributes
+        session_attr["speak_output"]=speak_output
+        
+        reprompt="Vuoi chiedermi qualcos'altro?"
+        
+        return (handler_input.response_builder.speak(speak_output).ask(reprompt).response)
+
+
+class HelpIntentHandler(AbstractRequestHandler):
+    """Handler for Help Intent."""
+    def can_handle(self, handler_input):
+        return ask_utils.is_intent_name("AMAZON.HelpIntent")(handler_input)
+
+    def handle(self, handler_input):
+        
+        speak_output = "PIERO Puoi chiedermi Punti da versare per la posizione 1 su Progetto Arc livello 1, oppure Punti per coprire la posizione 1 su Progetto Arc livello 1"
+
+        return (handler_input.response_builder.speak(speak_output).ask(speak_output).response)
+
+
+class RepeatIntentHandler(AbstractRequestHandler):
+    """Single handler for Cancel and Stop Intent."""
+    def can_handle(self, handler_input):
+        return ask_utils.is_intent_name("AMAZON.RepeatIntent")(handler_input)
+
+    def handle(self, handler_input):
+        
+        session_attr = handler_input.attributes_manager.session_attributes
+        
+        #If session attr is set returs it else return std out
+        if "speak_output" in session_attr:
+            speak_output = session_attr["speak_output"]
+            
+        else:
+            speak_output = "ALDO Puoi chiedermi Punti da versare per la posizione 1 su Progetto Arc livello 1, oppure Punti per coprire la posizione 1 su Progetto Arc livello 1"
+        
+        reprompt="Vuoi chiedermi qualcos'altro?"
+        
+        return (handler_input.response_builder.speak(speak_output).ask(reprompt).response)
+
+
+class CancelOrStopIntentHandler(AbstractRequestHandler):
+    """Single handler for Cancel and Stop Intent."""
+    def can_handle(self, handler_input):
+        
+        return (ask_utils.is_intent_name("AMAZON.CancelIntent")(handler_input) or
+                ask_utils.is_intent_name("AMAZON.StopIntent")(handler_input))
+
+    def handle(self, handler_input):
+        
+        speak_output = "Ciao, a presto!"
+        
+        return (handler_input.response_builder.speak(speak_output).set_should_end_session(True).response)
+
+
+class FallbackIntentHandler(AbstractRequestHandler):
+    """Single handler for Fallback Intent."""
+    def can_handle(self, handler_input):
+        
+        return ask_utils.is_intent_name("AMAZON.FallbackIntent")(handler_input)
+
+    def handle(self, handler_input):
+        
+        logger.info("In FallbackIntentHandler")
+        speech = "Hmm, non ho ben capito."
+        reprompt = "Cosa posso fare per te?"
+
+        return handler_input.response_builder.speak(speech).ask(reprompt).response
+
+class SessionEndedRequestHandler(AbstractRequestHandler):
+    """Handler for Session End."""
+    def can_handle(self, handler_input):
+        # type: (HandlerInput) -> bool
+        return ask_utils.is_request_type("SessionEndedRequest")(handler_input)
+
+    def handle(self, handler_input):
+        # type: (HandlerInput) -> Response
+
+        # Any cleanup logic goes here.
+
+        return handler_input.response_builder.response
+
+
+class CatchAllExceptionHandler(AbstractExceptionHandler):
+    """Generic error handling to capture any syntax or routing errors. If you receive an error
+    stating the request handler chain is not found, you have not implemented a handler for
+    the intent being invoked or included it in the skill builder below.
+    """
+    def can_handle(self, handler_input, exception):
+        # type: (HandlerInput, Exception) -> bool
+        return True
+
+    def handle(self, handler_input, exception):
+        # type: (HandlerInput, Exception) -> Response
+        logger.error(exception, exc_info=True)
+
+        speak_output = "Scusa, si è verificato un problema"
+
+        return (handler_input.response_builder.speak(speak_output).response)
+
+# The SkillBuilder object acts as the entry point for your skill, routing all request and response
+# payloads to the handlers above. Make sure any new handlers or interceptors you've
+# defined are included below. The order matters - they're processed top to bottom.
+
+
+sb = SkillBuilder()
+sb.add_request_handler(LaunchRequestHandler())
+sb.add_request_handler(HelpIntentHandler())
+sb.add_request_handler(CancelOrStopIntentHandler())
+sb.add_request_handler(SessionEndedRequestHandler())
+sb.add_request_handler(PfRichiestiHandler())
+sb.add_request_handler(RepeatIntentHandler())
+sb.add_request_handler(PfCoverHandler())
+sb.add_request_handler(FallbackIntentHandler())
+
+sb.add_exception_handler(CatchAllExceptionHandler())
+
+lambda_handler = sb.lambda_handler()
